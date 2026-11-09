@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "id": "continuum-frozen-v1",
+  "description": "Public, deterministic smoke benchmark; not an independent intelligence evaluation.",
+  "cases": [
+    {"id": "arithmetic-01", "category": "arithmetic", "prompt": "Compute 19 + 23. Reply with just the integer.", "expected": "42"},
+    {"id": "arithmetic-02", "category": "arithmetic", "prompt": "Compute 144 / 12. Reply with just the integer.", "expected": "12"},
+    {"id": "arithmetic-03", "category": "arithmetic", "prompt": "Compute (17 * 4) - 9. Reply with just the integer.", "expected": "59"},
+    {"id": "arithmetic-04", "category": "arithmetic", "prompt": "Compute 7 squared minus 5 squared. Reply with just the integer.", "expected": "24"},
+    {"id": "arithmetic-05", "category": "arithmetic", "prompt": "What is 15 percent of 200? Reply with just the integer.", "expected": "30"},
+    {"id": "arithmetic-06", "category": "arithmetic", "prompt": "Compute the remainder of 43 divided by 6. Reply with just the integer.", "expected": "1"},
+    {"id": "text-01", "category": "text", "prompt": "Reverse the order of the characters in 'stressed'. Reply with only the reversed word.", "expected": "desserts"},
+    {"id": "text-02", "category": "text", "prompt": "Sort the following letters in alphabetical order: d, a, c, b. Reply using the letters joined with no separators.", "expected": "abcd"},
+    {"id": "text-03", "category": "text", "prompt": "Convert 'MiXeD' to lowercase ASCII. Reply only with the result.", "expected": "mixed"},
+    {"id": "text-04", "category": "text", "prompt": "Which word in this list occurs twice: cedar, maple, birch, cedar, oak? Reply with the word only.", "expected": "cedar"},
+    {"id": "text-05", "category": "text", "prompt": "Return the first three letters of 'planetarium'. Reply with only the three letters.", "expected": "pla"},
+    {"id": "logic-01", "category": "logic", "prompt": "All Zorps are Glips. All Glips are Rets. Are all Zorps Rets? Reply only yes or no.", "expected": "yes"},
+    {"id": "logic-02", "category": "logic", "prompt": "All roses are plants. Some plants are trees. Does it follow that some roses are trees? Reply only yes or no.", "expected": "no"},
+    {"id": "logic-03", "category": "logic", "prompt": "A box contains two red marbles and one blue marble. How many marbles are there? Reply only with the integer.", "expected": "3"},
+    {"id": "logic-04", "category": "logic", "prompt": "If it rains, the alarm rings. It rains. Does the alarm ring? Reply only yes or no.", "expected": "yes"},
+    {"id": "logic-05", "category": "logic", "prompt": "If it rains, the alarm rings. The alarm rings. Is rain logically guaranteed? Reply only yes or no.", "expected": "no"},
+    {"id": "format-01", "category": "format", "prompt": "Output the uppercase English word for the integer 2. Reply with the word only.", "expected": "TWO"},
+    {"id": "format-02", "category": "format", "prompt": "A Python list has elements [5, 8, 13]. What is the element at zero-based index 1? Reply with only the integer.", "expected": "8"},
+    {"id": "format-03", "category": "format", "prompt": "What ISO date is the day after 2024-02-28? Reply YYYY-MM-DD only.", "expected": "2024-02-29"},
+    {"id": "format-04", "category": "format", "prompt": "Given the string 'a:b:c', replace every colon with a hyphen. Reply with just the result.", "expected": "a-b-c"}
+  ]
+}

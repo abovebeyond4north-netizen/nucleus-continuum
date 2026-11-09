@@ -14,6 +14,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Compile
-        run: python -m py_compile continuum.py tests/test_continuum.py
+        run: python -m py_compile continuum.py evalgate.py tests/test_continuum.py tests/test_evalgate.py
+      - name: Verify frozen evaluation fixture
+        run: python evalgate.py suite
       - name: Unit tests
         run: python -m unittest discover -s tests -v

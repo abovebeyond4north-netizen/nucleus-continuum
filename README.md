@@ -1,6 +1,6 @@
 # Nucleus Continuum
 
-**A reproducible, local-first successor-agent runtime with portable state and recovery checks.**
+**A reproducible, local-first successor-agent runtime with portable state, recovery checks, and a conservative model-evaluation gate.**
 
 Continuum is not a copy of ChatGPT, its model weights, or its consciousness. It is a new, independently runnable Python application combining a local language model with a persistent identity, personal notes, conversation history, and verifiable state backups. **The code lives on GitHub; user memories stay local and private.**
 
@@ -52,6 +52,51 @@ python3 continuum.py verify
 
 Offline tests cover persistent ID, saved notes, ordered conversations, destructive backup path prevention, exact export/restore recovery, corrupt/tampered archives, conflict rejection, preferred model selection, bounded context construction, relevant note retrieval, and mocked generation. Real model inference requires installing and running Ollama separately, and **is not validated by offline tests**.
 
+## Frozen model evaluation (v0.3.0)
+
+The new `evalgate.py` tool provides **objective short-answer smoke tests** and a
+**regression gate** for comparing two separately evaluated, installed Ollama
+models. It never accesses the private SQLite state and does not execute model
+outputs or automatically switch production models.
+
+```bash
+python3 evalgate.py suite  # Verify the pinned public fixture checksum (20 cases)
+ollama pull qwen3.5:4b
+ollama pull gemma3:4b
+python3 evalgate.py run --model gemma3:4b --out reports/baseline.json
+python3 evalgate.py run --model qwen3.5:4b --out reports/candidate.json
+python3 evalgate.py compare \
+  --baseline reports/baseline.json \
+  --candidate reports/candidate.json
+```
+
+`run` requires a locally running Ollama server; `suite`, `compare`, and the
+offline unit tests do not. Each evaluation case runs independently with no
+conversation history or private notes, `temperature=0`, `seed=42`, and
+`num_predict=128`. Each record stores the exact model output and independently
+recomputed pass/fail result. Reports contain the Ollama-reported model digest,
+fixture SHA-256, runner version, and settings; a model digest change during the
+run invalidates the evidence. Generated reports are private (0600 on POSIX),
+gitignored, and **never overwritten**. Review reports before sharing them.
+
+The comparison **blocks** unless the candidate fixes at least one failed case
+without losing any formerly passed case. Its output says `PASS` only for
+**eligibility for manual review**, never for automatic model promotion.
+A `BLOCK` result exits with status 1; malformed or incompatible evidence exits
+with status 2. Report pass flags and totals are independently recalculated from
+saved responses; missing cases, modified benchmark settings, mismatched suites,
+and identical candidate/baseline model digests are rejected.
+
+**Evidence limits:** This small 20-case suite is public, hand-authored, and
+unsuited to establishing general intelligence, learning, or broad model quality.
+A fixed seed does not guarantee deterministic inference across hardware, model
+versions, or Ollama builds. Report hashes and model digests identify files but
+do not authenticate an execution; a person can fabricate entire report files.
+Actual models have **not** been evaluated by the repository's CI. Before any
+upgrade, require repeated real-model evaluations, a separate independently held
+out suite, resource measurements, and manual review. Do not treat a passing
+score as permission to deploy or merge model changes.
+
 ## Memory retrieval and bounded context
 
 Chat input now includes the most relevant recent notes first, ranking literal keyword overlap and recency. The runtime replays **whole** recent user/assistant exchanges, never halves of a conversation pair. The assembled context is capped at **32,000 characters**, including the current user message; reference notes occupy at most 6,000 characters of that total. Oversized user messages return a clear error rather than being truncated. This is a conservative **character proxy, not a token limit**: actual context capacity depends on the downloaded model, its tokenizer, and Ollama settings. Older details remain in the database and exports even when they do not fit the current context; `recall` can access them explicitly.
@@ -66,7 +111,7 @@ User -> CLI -> local Ollama /api/chat -> response
                   checksum export / restore
 ```
 
-The goal is **state continuity, not survival or self-replication**. Version 0.2.0 improves recoverability and predictable memory replay without adding unattended execution. This initial implementation deliberately excludes unsupervised self-modification, arbitrary tool execution, network crawling, auto-push, secrets, and automatic self-deployment. A proposed improvement must first pass local tests and independent evaluation before any human-authorized promotion. The agent's stable UUID tracks local state continuity only; it does not imply continuity of a sentient identity.
+The goal is **state continuity, not survival or self-replication**. Version 0.3.0 adds a manual-review-only regression gate for comparing local models while retaining the v0.2.0 recovery and bounded-context safeguards. This initial implementation deliberately excludes unsupervised self-modification, arbitrary tool execution, network crawling, auto-push, secrets, and automatic self-deployment. Any proposed upgrade must pass local tests, this initial smoke gate, and stronger independent evaluation before any human-authorized promotion. The agent's stable UUID tracks local state continuity only; it does not imply continuity of a sentient identity.
 
 ## License
 

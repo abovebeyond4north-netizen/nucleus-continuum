@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from urllib import error, request
 from uuid import uuid4
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 SCHEMA_VERSION = 1
 DEFAULT_DB = Path.home() / ".nucleus-continuum" / "state.sqlite3"
 OLLAMA_URL = "http://127.0.0.1:11434"
