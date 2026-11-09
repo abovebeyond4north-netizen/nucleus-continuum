@@ -9,3 +9,5 @@ __pycache__/
 .env
 .env.*
 !.env.example
+# Model evaluation evidence may include model-generated or user-derived text
+reports/
