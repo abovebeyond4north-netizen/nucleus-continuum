@@ -37,7 +37,7 @@ python3 continuum.py import ~/continuum-backup.json
 python3 continuum.py identity  # Same persistent software identity
 ```
 
-The state is stored in `~/.nucleus-continuum/state.sqlite3` by default. To use a separate state file, put the global option first: `python3 continuum.py --db /safe/path/state.db identity`.
+The state is stored in `~/.nucleus-continuum/state.sqlite3` by default. On POSIX systems, newly created state files and directories use owner-only permissions (0600 for the DB and 0700 for a new directory). Existing files retain their existing permissions. To use a separate state file, put the global option first: `python3 continuum.py --db /safe/path/state.db identity`.
 
 Exports contain ALL conversation text and notes. **Treat backup JSON as confidential; never commit it to GitHub.** Backups include an SHA-256 checksum for accidental corruption detection, not authenticated protection against an attacker who can change both payload and checksum. Keep private copies encrypted and access-controlled. Import refuses to replace existing notes/history unless you add `--replace`. Import is transactional: invalid archives fail without replacing the local database.
 

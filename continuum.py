@@ -49,7 +49,18 @@ class State:
 
     def __init__(self, path: Path):
         self.path = Path(path).expanduser()
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        parent_is_new = not self.path.parent.exists()
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if parent_is_new and os.name == "posix":
+            os.chmod(self.path.parent, 0o700)
+        # A newly created state DB may contain private notes and conversations.
+        # Reserve it with owner-only permissions before SQLite opens it.
+        try:
+            fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+        except FileExistsError:
+            pass
+        else:
+            os.close(fd)
         self.conn = sqlite3.connect(str(self.path), timeout=10)
         self.conn.execute("PRAGMA busy_timeout=10000")
         self.conn.execute("PRAGMA journal_mode=WAL")

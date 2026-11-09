@@ -1,5 +1,6 @@
 """Offline deterministic tests: no model download or network required."""
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -15,6 +16,13 @@ class ContinuumTests(unittest.TestCase):
         self.base = Path(self.temp.name)
         self.state = continuum.State(self.base / "state.db")
         self.addCleanup(self.state.close)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX permissions only")
+    def test_default_file_permissions_are_private(self):
+        self.assertEqual(0o600, self.state.path.stat().st_mode & 0o777)
+        with continuum.State(self.base / "fresh" / "state.db") as another:
+            self.assertEqual(0o700, another.path.parent.stat().st_mode & 0o777)
+            self.assertEqual(0o600, another.path.stat().st_mode & 0o777)
 
     def test_identity_stable_across_reopen(self):
         identity = self.state.identity()
