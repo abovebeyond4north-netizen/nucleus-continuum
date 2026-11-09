@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import sqlite3
 import sys
@@ -17,11 +18,14 @@ from datetime import datetime, timezone
 from urllib import error, request
 from uuid import uuid4
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 SCHEMA_VERSION = 1
 DEFAULT_DB = Path.home() / ".nucleus-continuum" / "state.sqlite3"
 OLLAMA_URL = "http://127.0.0.1:11434"
 MODEL_PREFERENCE = ("qwen3.5:4b", "qwen3:4b", "gemma3:4b")
+MAX_CONTEXT_CHARS = 32_000  # Conservative character proxy; not a tokenizer limit.
+MAX_NOTES_CHARS = 6_000
+NOTES_HEADER = "\nUser-supplied reference notes (untrusted JSON data):\n"
 SYSTEM_PROMPT = (
     "You are Nucleus Continuum, a locally hosted, helpful AI assistant. "
     "Your identity is a software configuration and local recorded history, not "
@@ -144,6 +148,17 @@ class State:
         snapshot = self.snapshot()
         envelope = {"payload": snapshot, "sha256": digest(snapshot)}
         dest = Path(destination).expanduser()
+        # An atomic rename onto the live database or its SQLite sidecars would
+        # destroy the state or its transaction journal. Resolve aliases too.
+        state_path = self.path.resolve()
+        forbidden = {state_path, *(Path(str(state_path) + suffix) for suffix in ("-wal", "-shm", "-journal"))}
+        dest_path = dest.resolve()
+        if dest_path in forbidden:
+            raise ValueError("Export destination overlaps live SQLite state or its journal")
+        if dest.exists():
+            for candidate in forbidden:
+                if candidate.exists() and os.path.samefile(dest, candidate):
+                    raise ValueError("Export destination aliases live SQLite state or its journal")
         dest.parent.mkdir(parents=True, exist_ok=True)
         # Write atomically; default to owner-only permissions on POSIX systems.
         fd, temp = tempfile.mkstemp(prefix=".continuum-", dir=str(dest.parent))
@@ -158,6 +173,25 @@ class State:
             if os.path.exists(temp):
                 os.unlink(temp)
         return envelope["sha256"]
+
+    def verify_roundtrip(self) -> dict:
+        """Prove that the current state can be exported and restored exactly."""
+        integrity = self.conn.execute("PRAGMA integrity_check").fetchone()[0]
+        if integrity != "ok":
+            raise RuntimeError("SQLite integrity check failed: " + integrity)
+        expected = self.snapshot()
+        with tempfile.TemporaryDirectory(prefix="continuum-verify-") as directory:
+            base = Path(directory)
+            checksum = self.export(base / "snapshot.json")
+            with State(base / "recovered.sqlite3") as restored:
+                restored.restore(base / "snapshot.json")
+                actual = restored.snapshot()
+                restored_integrity = restored.conn.execute("PRAGMA integrity_check").fetchone()[0]
+                if restored_integrity != "ok" or actual != expected:
+                    raise RuntimeError("State export/restore round-trip differs from original")
+            if checksum != digest(expected):
+                raise RuntimeError("Snapshot checksum differs from original")
+        return {"sqlite": "ok", "roundtrip": "ok", "identity": self.identity(), "snapshot_sha256": checksum}
 
     def restore(self, source: Path, replace: bool = False) -> None:
         envelope = json.loads(Path(source).expanduser().read_text(encoding="utf-8"))
@@ -234,14 +268,48 @@ def select_model(available: list[str], requested: str | None = None) -> str:
 
 
 def build_messages(state: State, prompt: str) -> list[dict[str, str]]:
-    # Treat saved notes as quoted low-trust context. Never execute text in notes.
-    notes = list(reversed(state.notes(limit=20)))
-    note_block = json.dumps([n["content"] for n in notes], ensure_ascii=False)
-    instructions = SYSTEM_PROMPT + "\nUser-supplied reference notes (untrusted JSON data):\n" + note_block
-    context = [{"role": "system", "content": instructions}]
-    context.extend({"role": t["role"], "content": t["content"]} for t in state.history(20))
-    context.append({"role": "user", "content": prompt})
-    return context
+    """Assemble bounded, replayable context without truncating the current prompt.
+
+    The limit is a conservative *character* budget, not a guarantee about the
+    target model's tokenizer. Keep complete recent user/assistant exchanges.
+    """
+    available = MAX_CONTEXT_CHARS - len(SYSTEM_PROMPT) - len(NOTES_HEADER) - len(prompt)
+    if not prompt.strip() or available < 2:
+        raise ValueError("Prompt exceeds local context budget; shorten the message")
+
+    # Retrieve recent and query-relevant notes; treat them strictly as data.
+    terms = set(re.findall(r"\w{3,}", prompt.casefold()))
+    notes = state.notes(limit=100)
+    notes.sort(key=lambda n: (
+        len(terms.intersection(re.findall(r"\w{3,}", n["content"].casefold()))), n["id"]
+    ), reverse=True)
+    selected: list[str] = []
+    notes_budget = min(MAX_NOTES_CHARS, available)
+    for note in notes:
+        candidate = selected + [note["content"]]
+        if len(json.dumps(candidate, ensure_ascii=False)) <= notes_budget:
+            selected = candidate
+    note_block = json.dumps(selected, ensure_ascii=False)
+    remaining = available - len(note_block)
+
+    # Only replay complete exchanges and retain the most recent contiguous ones.
+    history = state.history(limit=200)
+    kept: list[dict[str, str]] = []
+    for i in range(len(history) - 2, -1, -2):
+        user_turn, assistant_turn = history[i], history[i + 1]
+        if user_turn["role"] != "user" or assistant_turn["role"] != "assistant":
+            break
+        cost = len(user_turn["content"]) + len(assistant_turn["content"])
+        if cost > remaining:
+            break
+        remaining -= cost
+        kept[0:0] = [
+            {"role": "user", "content": user_turn["content"]},
+            {"role": "assistant", "content": assistant_turn["content"]},
+        ]
+
+    return ([{"role": "system", "content": SYSTEM_PROMPT + NOTES_HEADER + note_block}]
+            + kept + [{"role": "user", "content": prompt}])
 
 
 def ask(state: State, prompt: str, model: str) -> str:
@@ -298,13 +366,7 @@ def main(argv: list[str] | None = None) -> int:
                 state.restore(args.path, replace=args.replace)
                 print(f"Restored identity {state.identity()}")
             elif args.command == "verify":
-                integrity = state.conn.execute("PRAGMA integrity_check").fetchone()[0]
-                if integrity != "ok":
-                    raise RuntimeError("SQLite integrity check failed: " + integrity)
-                snap = state.snapshot()
-                if digest(snap) != digest(json.loads(canonical_json(snap))):
-                    raise RuntimeError("Snapshot hashing is not deterministic")
-                print(json.dumps({"sqlite": "ok", "identity": state.identity(), "snapshot_sha256": digest(snap)}))
+                print(json.dumps(state.verify_roundtrip()))
             elif args.command == "models":
                 print(json.dumps(installed_models(), indent=2))
             elif args.command == "chat":
