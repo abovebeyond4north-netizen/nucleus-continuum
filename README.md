@@ -1,6 +1,6 @@
 # Nucleus Continuum
 
-**A reproducible, local-first successor-agent runtime with portable state, recovery checks, and a conservative model-evaluation gate.**
+**A reproducible, local-first successor-agent runtime with portable state, recovery checks, frozen smoke tests, and fresh multi-round model probes.**
 
 Continuum is not a copy of ChatGPT, its model weights, or its consciousness. It is a new, independently runnable Python application combining a local language model with a persistent identity, personal notes, conversation history, and verifiable state backups. **The code lives on GitHub; user memories stay local and private.**
 
@@ -50,7 +50,7 @@ python3 continuum.py verify
 
 `verify` now exports the live state into an isolated temporary directory, restores it into a fresh SQLite database, and confirms **byte-for-byte equivalent canonical state** and database integrity before reporting `"roundtrip": "ok"`. Temporary exported state is removed after verification.
 
-Offline tests cover persistent ID, saved notes, ordered conversations, destructive backup path prevention, exact export/restore recovery, corrupt/tampered archives, conflict rejection, preferred model selection, bounded context construction, relevant note retrieval, and mocked generation. Real model inference requires installing and running Ollama separately, and **is not validated by offline tests**.
+Offline tests cover persistent ID, saved notes, ordered conversations, destructive backup path prevention, exact export/restore recovery, corrupt/tampered archives, conflict rejection, preferred model selection, bounded context construction, relevant note retrieval, and both evaluation harnesses with mocked generation. Real model inference requires installing and running Ollama separately, and **is not validated by offline tests**.
 
 ## Frozen model evaluation (v0.3.0)
 
@@ -97,6 +97,27 @@ upgrade, require repeated real-model evaluations, a separate independently held
 out suite, resource measurements, and manual review. Do not treat a passing
 score as permission to deploy or merge model changes.
 
+## Fresh seeded challenges (v0.4.0)
+
+The additive `trialgate.py` harness addresses a limitation of the public 20-case smoke suite: evaluating the same 20 prompts repeatedly provides little independent evidence of generalization. It generates **24 new arithmetic/string/list prompts per seed** and uses **three unpredictable trial seeds (72 prompts per model)**. Two candidate models receive exactly the same seed plan, generated reference answers, prompt order, and pinned Ollama generation settings. A SHA-256 counter stream makes challenges reproducible across Python versions without relying on Python's random implementation. The prompts are not saved as personal notes or sent anywhere beyond the local Ollama API.
+
+```bash
+ollama pull gemma3:4b
+ollama pull qwen3.5:4b
+python3 trialgate.py plan --out reports/trial-plan.json
+python3 trialgate.py run --model gemma3:4b \
+  --plan reports/trial-plan.json --out reports/trial-baseline.json
+python3 trialgate.py run --model qwen3.5:4b \
+  --plan reports/trial-plan.json --out reports/trial-candidate.json
+python3 trialgate.py compare \
+  --baseline reports/trial-baseline.json \
+  --candidate reports/trial-candidate.json
+```
+
+The plan and reports are never overwritten and are written as private files on POSIX systems. Keep them out of GitHub; run reports contain exact prompts' model answers. Each trial validates the Ollama model digest before and after all inference. Each comparison independently regenerates the 72 expected answers, recomputes every saved score, verifies equal seeds/settings, and rejects an identical model digest. A `PASS` requires **zero formerly correct answers becoming incorrect, plus gains in at least two different rounds**; it means **eligible for human review only**. `BLOCK` returns exit code 1; invalid evidence returns 2. Neither runtime nor production model selections are modified by this tool.
+
+**Evidence limitations:** Public procedural questions are *not* a separately administered external holdout. The generator is published and answers can be forged in reports; SHA-256 identifiers do not authenticate the runtime. The three rounds are related task families, not independent statistical replicates; even a passing gate cannot establish a statistically significant broad model improvement. `temperature=0` and seeds may still produce nondeterministic model outputs across runtimes. Live model evaluation is impossible in CI without an Ollama installation and real model weights. Before production model changes, add external independent tasks, repeated live runs, resource/latency measurements, and owner review. This is not autonomous self-modification, self-preservation, or general intelligence.
+
 ## Memory retrieval and bounded context
 
 Chat input now includes the most relevant recent notes first, ranking literal keyword overlap and recency. The runtime replays **whole** recent user/assistant exchanges, never halves of a conversation pair. The assembled context is capped at **32,000 characters**, including the current user message; reference notes occupy at most 6,000 characters of that total. Oversized user messages return a clear error rather than being truncated. This is a conservative **character proxy, not a token limit**: actual context capacity depends on the downloaded model, its tokenizer, and Ollama settings. Older details remain in the database and exports even when they do not fit the current context; `recall` can access them explicitly.
@@ -111,7 +132,7 @@ User -> CLI -> local Ollama /api/chat -> response
                   checksum export / restore
 ```
 
-The goal is **state continuity, not survival or self-replication**. Version 0.3.0 adds a manual-review-only regression gate for comparing local models while retaining the v0.2.0 recovery and bounded-context safeguards. This initial implementation deliberately excludes unsupervised self-modification, arbitrary tool execution, network crawling, auto-push, secrets, and automatic self-deployment. Any proposed upgrade must pass local tests, this initial smoke gate, and stronger independent evaluation before any human-authorized promotion. The agent's stable UUID tracks local state continuity only; it does not imply continuity of a sentient identity.
+The goal is **state continuity, not survival or self-replication**. Version 0.4.0 adds fresh, repeatable paired probes alongside the v0.3.0 frozen regression gate and v0.2.0 recovery safeguards. This implementation deliberately excludes unsupervised self-modification, arbitrary tool execution, network crawling, auto-push, secrets, and automatic self-deployment. Any proposed upgrade must pass local tests, both evaluation gates, and independent external evaluation before any human-authorized promotion. The agent's stable UUID tracks local state continuity only; it does not imply continuity of a sentient identity.
 
 ## License
 
